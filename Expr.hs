@@ -107,9 +107,7 @@ parseFunVars args vars =
 parseAppE :: [SExp] -> Result Expr
 parseAppE args =
   case args of
-    x:y:rest  ->
-      do argExprs <- parseAppArgs args []
-         Ok (AppE argExprs)
+    x:y:rest  -> parseAppArgs args [] >>= \x -> Ok (AppE x)
     otherwise -> syntaxErr "app" "at least two expressions" args
 
 parseAppArgs :: [SExp] -> [Expr] -> Result [Expr]
@@ -132,37 +130,29 @@ desugar expr =
          altC  <- desugar altE
          Ok (IfC testC consC altC)
     FunE vars body       -> desugarFunE vars body
-    AppE (funE:rest)     ->
-      do funC <- desugar funE
-         desugarAppE funC rest
-    WithStarE vars body  ->
-      do bodyC <- desugar body
-         desugarWithStarE bodyC vars
+    AppE (funE:rest)     -> desugar funE >>= desugarAppE rest
+    WithStarE vars body  -> desugar body >>= desugarWithStarE vars
     otherwise            -> Err ("Unrecognized expression: `" ++ (show expr) ++ "`")
 
 desugarFunE :: [Var] -> Expr -> Result CExpr
 desugarFunE vars body =
   case vars of
     []     -> desugar body
-    v:rest ->
-      do innerC <- desugarFunE rest body
-         Ok (FunC v innerC)
+    v:rest -> desugarFunE rest body >>= \x -> Ok (FunC v x)
 
-desugarAppE :: CExpr -> [Expr] -> Result CExpr
-desugarAppE funC args =
+desugarAppE :: [Expr] -> CExpr -> Result CExpr
+desugarAppE args funC =
   case args of
     []     -> Ok funC
-    v:rest ->
-      do argC <- desugar v
-         desugarAppE (AppC funC argC) rest
+    v:rest -> desugar v >>= \x -> desugarAppE rest (AppC funC x)
 
-desugarWithStarE :: CExpr -> [(Var, Expr)] -> Result CExpr
-desugarWithStarE bodyC vars =
+desugarWithStarE :: [(Var, Expr)] -> CExpr -> Result CExpr
+desugarWithStarE vars bodyC =
   case vars of
     []     -> Ok bodyC
     v:rest ->
       let (name, value) = v in
-      do innerC <- desugarWithStarE bodyC rest
+      do innerC <- desugarWithStarE rest bodyC
          valueC <- desugar value
          Ok (AppC (FunC name innerC) valueC)
 
@@ -174,9 +164,7 @@ checkIds bound reserved expr =
     FunC v body       ->
       if v `elem` reserved then Err("Attempt to rebind `" ++ v ++ "`")
       else checkIds (v:bound) reserved body
-    AppC f v          ->
-      do _ <- checkIds bound reserved f
-         checkIds bound reserved v
+    AppC f v          -> checkIds bound reserved f >>= \x -> checkIds bound reserved v
     IfC test cons alt ->
       do _ <- checkIds bound reserved test
          _ <- checkIds bound reserved cons
@@ -184,14 +172,10 @@ checkIds bound reserved expr =
     otherwise         -> Ok ()
 
 parseStr :: String -> Result Expr
-parseStr input =
-  do (sexp, _) <- parseSExp (tokenize input)
-     parseExpr sexp
+parseStr input = parseSExp (tokenize input) >>= \(x, _) -> parseExpr x
 
 desugarStr :: String -> Result CExpr
-desugarStr input =
-  do expr <- parseStr input
-     desugar expr
+desugarStr input = parseStr input >>= desugar
 
 checkStr :: String -> Result CExpr
 checkStr input =
