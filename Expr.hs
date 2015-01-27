@@ -6,6 +6,10 @@ import SExp
 
 type Var = String
 
+syntaxErr :: (Show a) => String -> String -> a -> Result b
+syntaxErr container expected found =
+  Err ("Invalid syntax in `" ++ container ++ "`: expected " ++ expected ++ " but found `" ++ (show found) ++ "`")
+
 -- Expression syntax:
 -- <e> ::= <number>
 --       | (if <e> <e> <e>)
@@ -35,10 +39,94 @@ data CExpr = NumC Integer
            deriving (Eq, Show)
 
 parseExpr :: SExp -> Result Expr
-parseExpr sexp = Err "parseExpr not implemented yet"
+parseExpr sexp =
+  case sexp of
+    NumS n                    -> Ok (NumE n)
+    IdS v                     -> Ok (VarE v)
+    ListS ((IdS "if"):ses)    -> parseIfE ses
+    ListS ((IdS "with*"):ses) -> parseWithStarE ses
+    ListS ((IdS "fun"):ses)   -> parseFunE ses
+    ListS ses                 -> parseAppE ses
+
+parseIfE :: [SExp] -> Result Expr
+parseIfE args =
+  case args of
+    testSExp:consSExp:altSExp:[] ->
+      do test  <- parseExpr testSExp
+         cons  <- parseExpr consSExp
+         alt   <- parseExpr altSExp
+         Ok (IfE test cons alt)
+    otherwise -> syntaxErr "if" "test, consequent, and alternate expressions" args
+
+parseWithStarE :: [SExp] -> Result Expr
+parseWithStarE args =
+  case args of
+    (ListS varSExps):bodySExp:[] ->
+      do vars <- parseWithVars varSExps []
+         body <- parseExpr bodySExp
+         Ok (WithStarE (reverse vars) body)
+    otherwise -> syntaxErr "with*" "variable list and body" args
+
+parseWithVars :: [SExp] -> [(Var, Expr)] -> Result [(Var, Expr)]
+parseWithVars args varDefs =
+  case args of
+    []          -> Ok varDefs
+    varSExp:ses -> case varSExp of
+                     ListS (nameSExp:valueSExp:[]) ->
+                       do nameExpr  <- parseExpr nameSExp
+                          valueExpr <- parseExpr valueSExp
+                          rest      <- parseWithVars ses varDefs
+                          case nameExpr of
+                            VarE v    -> Ok ((v, valueExpr):rest)
+                            otherwise -> syntaxErr "with*" "variable name" nameExpr
+                     otherwise -> syntaxErr "with*" "variable declaration" varSExp
+
+parseFunE :: [SExp] -> Result Expr
+parseFunE args =
+  case args of
+    (ListS []):_                 -> syntaxErr "fun" "at least one variable binding" args
+    (ListS varSExps):bodySExp:[] ->
+      do vars <- parseFunVars varSExps []
+         body <- parseExpr bodySExp
+         Ok (FunE (reverse vars) body)
+    otherwise -> syntaxErr "fun" "variable list and body" args
+
+parseFunVars :: [SExp] -> [Var] -> Result [Var]
+parseFunVars args vars =
+  case args of
+    []          -> Ok vars
+    varSExp:ses ->
+      do varExpr <- parseExpr varSExp
+         rest    <- parseFunVars ses vars
+         case varExpr of
+           VarE v    -> Ok (v:rest)
+           otherwise -> syntaxErr "fun" "variable binding" varExpr
+
+parseAppE :: [SExp] -> Result Expr
+parseAppE args =
+  case args of
+    x:y:rest  ->
+      do argExprs <- parseAppArgs args []
+         Ok (AppE argExprs)
+    otherwise -> syntaxErr "app" "at least two expressions" args
+
+parseAppArgs :: [SExp] -> [Expr] -> Result [Expr]
+parseAppArgs args argExprs =
+  case args of
+    []          -> Ok argExprs
+    argSExp:ses ->
+      do argExpr <- parseExpr argSExp
+         rest    <- parseAppArgs ses argExprs
+         Ok (argExpr:rest)
 
 desugar :: Expr -> Result CExpr
 desugar expr = Err "desugar not implemented yet"
 
 checkIds :: [String] -> [String] -> CExpr -> Result ()
 checkIds bound reserved expr = Err "checkIds not implemented yet"
+
+parseStr :: String -> Result Expr
+parseStr input =
+  do (sexp, _) <- parseSExp (tokenize input)
+     parseExpr sexp
+
