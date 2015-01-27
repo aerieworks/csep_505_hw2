@@ -64,7 +64,7 @@ parseWithStarE args =
     (ListS varSExps):bodySExp:[] ->
       do vars <- parseWithVars varSExps []
          body <- parseExpr bodySExp
-         Ok (WithStarE (reverse vars) body)
+         Ok (WithStarE vars body)
     otherwise -> syntaxErr "with*" "variable list and body" args
 
 parseWithVars :: [SExp] -> [(Var, Expr)] -> Result [(Var, Expr)]
@@ -88,7 +88,7 @@ parseFunE args =
     (ListS varSExps):bodySExp:[] ->
       do vars <- parseFunVars varSExps []
          body <- parseExpr bodySExp
-         Ok (FunE (reverse vars) body)
+         Ok (FunE vars body)
     otherwise -> syntaxErr "fun" "variable list and body" args
 
 parseFunVars :: [SExp] -> [Var] -> Result [Var]
@@ -120,7 +120,49 @@ parseAppArgs args argExprs =
          Ok (argExpr:rest)
 
 desugar :: Expr -> Result CExpr
-desugar expr = Err "desugar not implemented yet"
+desugar expr =
+  case expr of
+    NumE n               -> Ok (NumC n)
+    VarE v               -> Ok (VarC v)
+    IfE testE consE altE ->
+      do testC <- desugar testE
+         consC <- desugar consE
+         altC  <- desugar altE
+         Ok (IfC testC consC altC)
+    FunE vars body       -> desugarFunE vars body
+    AppE (funE:rest)     ->
+      do funC <- desugar funE
+         desugarAppE funC rest
+    WithStarE vars body  ->
+      do bodyC <- desugar body
+         desugarWithStarE bodyC vars
+    otherwise            -> Err ("Unrecognized expression: `" ++ (show expr) ++ "`")
+
+desugarFunE :: [Var] -> Expr -> Result CExpr
+desugarFunE vars body =
+  case vars of
+    []     -> desugar body
+    v:rest ->
+      do innerC <- desugarFunE rest body
+         Ok (FunC v innerC)
+
+desugarAppE :: CExpr -> [Expr] -> Result CExpr
+desugarAppE funC args =
+  case args of
+    []     -> Ok funC
+    v:rest ->
+      do argC <- desugar v
+         desugarAppE (AppC funC argC) rest
+
+desugarWithStarE :: CExpr -> [(Var, Expr)] -> Result CExpr
+desugarWithStarE bodyC vars =
+  case vars of
+    []     -> Ok bodyC
+    v:rest ->
+      let (name, value) = v in
+      do innerC <- desugarWithStarE bodyC rest
+         valueC <- desugar value
+         Ok (AppC (FunC name innerC) valueC)
 
 checkIds :: [String] -> [String] -> CExpr -> Result ()
 checkIds bound reserved expr = Err "checkIds not implemented yet"
@@ -129,4 +171,9 @@ parseStr :: String -> Result Expr
 parseStr input =
   do (sexp, _) <- parseSExp (tokenize input)
      parseExpr sexp
+
+desugarStr :: String -> Result CExpr
+desugarStr input =
+  do expr <- parseStr input
+     desugar expr
 
