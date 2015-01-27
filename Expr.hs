@@ -165,7 +165,21 @@ desugarWithStarE bodyC vars =
          Ok (AppC (FunC name innerC) valueC)
 
 checkIds :: [String] -> [String] -> CExpr -> Result ()
-checkIds bound reserved expr = Err "checkIds not implemented yet"
+checkIds bound reserved expr =
+  case expr of
+    VarC v            ->
+      if v `elem` bound then Ok () else Err ("Variable `" ++ v ++ "` is unbound")
+    FunC v body       ->
+      if v `elem` reserved then Err("Attempt to rebind `" ++ v ++ "`")
+      else checkIds (v:bound) reserved body
+    AppC f v          ->
+      do _ <- checkIds bound reserved f
+         checkIds bound reserved v
+    IfC test cons alt ->
+      do _ <- checkIds bound reserved test
+         _ <- checkIds bound reserved cons
+         checkIds bound reserved alt
+    otherwise         -> Ok ()
 
 parseStr :: String -> Result Expr
 parseStr input =
@@ -176,4 +190,10 @@ desugarStr :: String -> Result CExpr
 desugarStr input =
   do expr <- parseStr input
      desugar expr
+
+checkStr :: String -> Result CExpr
+checkStr input =
+  do expr <- desugarStr input
+     _    <- checkIds ["*", "+"] ["if", "fun", "True", "False"] expr
+     Ok expr
 
