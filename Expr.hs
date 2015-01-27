@@ -99,7 +99,9 @@ parseFunVars args vars =
       do varExpr <- parseExpr varSExp
          rest    <- parseFunVars ses vars
          case varExpr of
-           VarE v    -> Ok (v:rest)
+           VarE v    ->
+             if v `elem` rest then Err ("Variable `" ++ v ++ "` cannot be bound twice in the same function")
+             else Ok (v:rest)
            otherwise -> syntaxErr "fun" "variable binding" varExpr
 
 parseAppE :: [SExp] -> Result Expr
