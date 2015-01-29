@@ -71,13 +71,44 @@ instance Show Val where
   show (BoolV b) = show b
   show (FunV var body env) = "(fun (" ++ var ++ ") " ++ (show body) ++ " | " ++
                              (show (map fst env)) ++ ")"
-  
+
   show (PrimV name impl) = "<primitive: " ++ name ++ ">"
   show (BoxV loc) = "<box@" ++ (show loc) ++ ">"
 
+errTR :: String -> STR a
+errTR msg = STR (\st -> (Err msg, st))
+
+wrapBinaryArithOp :: String -> (Integer -> Integer -> Val) -> Val
+wrapBinaryArithOp name op =
+  PrimV name (
+    \arg1 -> return (PrimV ("partial:" ++ name)
+                     (\arg2 ->
+                       case (arg1, arg2) of
+                        (NumV lv, NumV rv) -> return (op lv rv)
+                        nonNum -> errTR ("numeric op applied to: `" ++ show nonNum ++ "`"))))
+
 -- Populate initialEnv...
 initialEnv :: Env
-initialEnv = []
+initialEnv = [
+  ("true", BoolV True),
+  ("false", BoolV False),
+  ("box", PrimV "box" (\x -> alloc x >>= (\loc -> return (BoxV loc)))),
+  ("unbox", PrimV "unbox" (\box ->
+    case box of
+      BoxV loc  -> fetch loc
+      otherwise -> errTR ("Cannot unbox non-box value `" ++ show box ++ "`"))
+    ),
+  ("set-box!", PrimV "set-box!" (\box ->
+    case box of
+      BoxV loc  -> fetch loc >>= (\_ ->
+        return (PrimV "partial:set-box!" (\val -> update loc val >>= (\_ -> return val))))
+      otherwise -> errTR ("Cannot set non-box value `" ++ show box ++ "`"))
+    ),
+  ("+", wrapBinaryArithOp "addition" (\x y -> NumV (x + y))),
+  ("*", wrapBinaryArithOp "multiplication" (\x y -> NumV (x * y))),
+  ("=", wrapBinaryArithOp "equals" (\x y -> BoolV (x == y))),
+  ("<", wrapBinaryArithOp "less than" (\x y -> BoolV (x < y)))
+  ]
 
 interp :: CExpr -> Env -> STR Val
 interp expr env = fail "'interp' not yet implemented"
