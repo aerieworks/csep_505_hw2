@@ -4,6 +4,7 @@ import Control.Applicative
 import Control.Monad
 import Expr
 import Result
+import Data.Typeable
 
 type Loc = Int
 
@@ -16,23 +17,39 @@ type Store = (Loc, [(Loc, Val)])
 newtype STR a = STR (Store -> (Result a, Store))
 
 alloc :: Val -> STR Loc
-alloc val = fail "need to implement alloc"
+alloc val = STR (\store ->
+  let (loc, contents) = store
+  in (Ok loc, (loc + 1, (loc, val):contents))
+  )
 
 fetch :: Loc -> STR Val
-fetch loc = fail "need to implement lookup"
+fetch loc = STR (\store ->
+  case lookup loc (snd store) of
+    Just val -> (Ok val, store)
+    Nothing  -> (Err ("Segmentation fault (Attempt to read from unallocated location: `" ++ show loc ++ "`)"), store)
+  )
 
 update :: Loc -> Val -> STR ()
-update loc val = fail "need to implement update"
+update loc val = STR (\store ->
+  let (next, contents) = store
+  in case lookup loc contents of
+       Just _   -> (Ok (), (next, (loc, val):contents))
+       Nothing  -> (Err ("Segmentation fault (Attempt to write to unallocated location: `" ++ show loc ++ "`)"), store)
+  )
 
 instance Functor STR where
   fmap f st = st >>= return . f
 
 instance Monad STR where
   -- (>>=) :: STR a -> (a -> STR b) -> STR b
-  (STR st) >>= f = fail "(>>=) not yet implemented for STR"
+  (STR st) >>= f = STR (\store ->
+    case st store of
+      (Ok v, store')    -> let STR x = f v in x store'
+      (Err msg, store') -> (Err msg, store')
+    )
 
   -- return :: a -> STR a
-  return v = fail "'return' not yet implemented for STR"
+  return v = STR (\store -> (Ok v, store))
 
   fail msg = STR (\s -> (Err msg, s))
 
