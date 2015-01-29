@@ -30,7 +30,51 @@ wrapBinaryArithOp name op =
 
 -- Populate initialEnv ...
 initialEnv :: Env
-initialEnv = []
+initialEnv = [
+  ("true", BoolV True),
+  ("false", BoolV False),
+  ("+", wrapBinaryArithOp "addition" (\x y -> NumV (x + y))),
+  ("*", wrapBinaryArithOp "multiplication" (\x y -> NumV (x * y))),
+  ("=", wrapBinaryArithOp "equals" (\x y -> BoolV (x == y))),
+  ("<", wrapBinaryArithOp "less than" (\x y -> BoolV (x < y)))
+  ]
 
 interp :: CExpr -> Env -> Result Val
-interp expr env = Err "'interp' not yet implemented"
+interp expr env =
+  case expr of
+    NumC num          -> Ok (NumV num)
+    FunC v body       -> Ok (FunV v body env)
+    VarC var          -> interpVariable var env
+    IfC test cons alt -> interpIf test cons alt env
+    AppC func arg     -> interpApplication func arg env
+
+interpVariable :: Var -> Env -> Result Val
+interpVariable var env =
+  case lookup var env of
+    Nothing  -> Err ("Variable `" ++ (show var) ++ "` is undefined.")
+    Just val -> Ok val
+
+interpIf :: CExpr -> CExpr -> CExpr -> Env -> Result Val
+interpIf testExpr consExpr altExpr env =
+  interp testExpr env >>= \x ->
+    case x of
+      BoolV True  -> interp consExpr env
+      BoolV False -> interp altExpr env
+      otherwise   -> syntaxErr "if conditional" "boolean expression" x
+
+interpApplication :: CExpr -> CExpr -> Env -> Result Val
+interpApplication funcExpr argExpr env =
+  do func <- interp funcExpr env
+     arg  <- interp argExpr env
+     case func of
+       FunV var body fenv -> interp body ((var, arg):fenv)
+       PrimV _ body       -> body arg
+       otherwise          -> syntaxErr "application" "function or primitive" func
+
+interpStr :: String -> Result Val
+interpStr input =
+  let env      = initialEnv
+      bound    = map (\x -> fst x) env
+      reserved = ("if":"fun":bound)
+  in desugarStr input >>= (\expr ->
+    checkIds bound reserved expr >>= (\_ -> interp expr env))

@@ -1,4 +1,4 @@
-module Expr (Var, Expr(..), CExpr(..), parseExpr, desugar, checkIds) where
+module Expr (Var, Expr(..), CExpr(..), parseExpr, desugar, checkIds, syntaxErr, parseStr, desugarStr, checkStr) where
 
 import Data.List
 import Result
@@ -179,7 +179,8 @@ desugarStr input = parseStr input >>= desugar
 
 checkStr :: String -> Result CExpr
 checkStr input =
+  let bound = ["*", "+", "=", "<", "true", "false"] in
   do expr <- desugarStr input
-     _    <- checkIds ["*", "+"] ["if", "fun", "True", "False"] expr
+     _    <- checkIds bound ("if":"fun":bound) expr
      Ok expr
 
