@@ -5,6 +5,7 @@ import Control.Monad
 import Expr
 import Result
 import Data.Typeable
+import System.IO
 
 type Loc = Int
 
@@ -26,7 +27,7 @@ fetch :: Loc -> STR Val
 fetch loc = STR (\store ->
   case lookup loc (snd store) of
     Just val -> (Ok val, store)
-    Nothing  -> (Err ("Segmentation fault (Attempt to read from unallocated location: `" ++ show loc ++ "`)"), store)
+    Nothing  -> (Err ("Segmentation fault ;) (Attempt to read from unallocated location: `" ++ show loc ++ "`)"), store)
   )
 
 update :: Loc -> Val -> STR ()
@@ -34,7 +35,7 @@ update loc val = STR (\store ->
   let (next, contents) = store
   in case lookup loc contents of
        Just _   -> (Ok (), (next, (loc, val):contents))
-       Nothing  -> (Err ("Segmentation fault (Attempt to write to unallocated location: `" ++ show loc ++ "`)"), store)
+       Nothing  -> (Err ("Segmentation fault ;) (Attempt to write to unallocated location: `" ++ show loc ++ "`)"), store)
   )
 
 instance Functor STR where
@@ -111,4 +112,45 @@ initialEnv = [
   ]
 
 interp :: CExpr -> Env -> STR Val
-interp expr env = fail "'interp' not yet implemented"
+interp expr env =
+  case expr of
+    NumC num          -> return (NumV num)
+    FunC v body       -> return (FunV v body env)
+    VarC var          -> case lookup var env of
+                           Nothing  -> fail ("Variable`" ++ show var ++ "` is undefined.")
+                           Just val -> return val
+    IfC test cons alt -> interpIf test cons alt env
+    AppC func arg     -> interpApplication func arg env
+
+interpIf :: CExpr -> CExpr -> CExpr -> Env -> STR Val
+interpIf testExpr consExpr altExpr env =
+  interp testExpr env >>= \x ->
+    case x of
+      BoolV True  -> interp consExpr env
+      BoolV False -> interp altExpr env
+      otherwise   -> fail (syntaxErrMsg "if conditional" "boolean expression" x)
+
+interpApplication :: CExpr -> CExpr -> Env -> STR Val
+interpApplication funcExpr argExpr env =
+  do func <- interp funcExpr env
+     arg  <- interp argExpr env
+     case func of
+       FunV var body fenv -> interp body ((var, arg):fenv)
+       PrimV _ body       -> body arg
+       otherwise          -> fail (syntaxErrMsg "application" "function or primitive" func)
+
+interpStr :: String -> Result Val
+interpStr input =
+  let env      = initialEnv
+      bound    = map (\x -> fst x) env
+      reserved = ("if":"fun":bound)
+      result   = desugarStr input -- >>= (\expr -> checkIds bound reserved expr >>= \_ -> expr)
+  in case result of
+    Err msg -> fail msg
+    Ok expr -> let STR tr = interp expr env in fst (tr (0, []))
+
+interpFile :: String -> IO ()
+interpFile filename =
+  do input <- readFile filename
+     putStr (show (interpStr input) ++ "\n")
+

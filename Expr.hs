@@ -1,4 +1,4 @@
-module Expr (Var, Expr(..), CExpr(..), parseExpr, desugar, checkIds, syntaxErr, parseStr, desugarStr, checkStr) where
+module Expr (Var, Expr(..), CExpr(..), parseExpr, desugar, checkIds, syntaxErr, syntaxErrMsg, parseStr, desugarStr, checkStr) where
 
 import Data.List
 import Result
@@ -7,8 +7,11 @@ import SExp
 type Var = String
 
 syntaxErr :: (Show a) => String -> String -> a -> Result b
-syntaxErr container expected found =
-  Err ("Invalid syntax in `" ++ container ++ "`: expected " ++ expected ++ " but found `" ++ (show found) ++ "`")
+syntaxErr container expected found = Err (syntaxErrMsg container expected found)
+
+syntaxErrMsg :: (Show a) => String -> String -> a -> String
+syntaxErrMsg container expected found =
+  ("Invalid syntax in `" ++ container ++ "`: expected " ++ expected ++ " but found `" ++ (show found) ++ "`")
 
 -- Expression syntax:
 -- <e> ::= <number>
