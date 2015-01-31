@@ -133,7 +133,7 @@ desugar expr =
          altC  <- desugar altE
          Ok (IfC testC consC altC)
     FunE vars body       -> desugarFunE vars body
-    AppE (funE:rest)     -> desugar funE >>= desugarAppE rest
+    AppE (funE:rest)     -> desugar funE >>= (flip desugarAppE) rest
     WithStarE vars body  -> desugar body >>= desugarWithStarE vars
     otherwise            -> Err ("Unrecognized expression: `" ++ (show expr) ++ "`")
 
@@ -143,11 +143,11 @@ desugarFunE vars body =
     []     -> desugar body
     v:rest -> desugarFunE rest body >>= \x -> Ok (FunC v x)
 
-desugarAppE :: [Expr] -> CExpr -> Result CExpr
-desugarAppE args funC =
+desugarAppE :: CExpr -> [Expr] -> Result CExpr
+desugarAppE func args =
   case args of
-    []     -> Ok funC
-    v:rest -> desugar v >>= \x -> desugarAppE rest (AppC funC x)
+    []     -> Ok func
+    v:rest -> desugar v >>= \x -> desugarAppE (AppC func x) rest
 
 desugarWithStarE :: [(Var, Expr)] -> CExpr -> Result CExpr
 desugarWithStarE vars bodyC =
