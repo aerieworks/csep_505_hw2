@@ -1,19 +1,18 @@
 (with* [(mkrecur (fun (f) (f f)))
+        (id (fun (v) v))
+        (and (fun (a b) { if a b false }))
+        (or (fun (a b) { if a true b }))
+        (not (fun (a) { if a false true }))
+        (xor (fun (a b) { or (and a (not b)) (and b (not a)) }))
 
-        (incBy (fun (b amount) { set-box! b (+ (unbox b) amount) }))
-        (getAndIncBy (fun (b amount) { with* [(old (unbox b)) (_ (incBy b amount))] old }))
-        (inc (fun (b) { incBy b 1 }))
-        (getAndInc (fun (b) { getAndIncBy b 1 }))
-        (dec (fun (b) { incBy b -1 }))
-        (getAndDec (fun (b) { getAndIncBy b -1 }))
+        (- (fun (a b) { + a (* b -1) }))
+        (> (fun (a b) { < b a }))
+        (<= (fun (a b) { not (> a b) }))
+        (>= (fun (a b) { not (< a b) }))
 
         (pair (fun (x y) { fun (which) { if which x y } }))
         (fst (fun (p) { p true }))
         (snd (fun (p) { p false }))
-
-	(continue (fun (v) { pair v true } ))
-	(break (fun (v) { pair v false } ))
-	(continue? (fun (cond cons alt) { if (snd cond) cons alt } ))
 
         (list (fun (v) { pair v (pair false false) }))
         (value (fun (n) { fst n }))
@@ -21,15 +20,16 @@
         (next (fun (n) { snd (snd n) }))
         (cons (fun (v n) { pair v (pair true n) }))
 
-        (while (with* [(_while (mkrecur (fun (w)
-                                        { fun (v f)
-                                              { with* [(result (f v))]
-                                                (if (snd result)
-                                                    (w w (value result) f)
-                                                    result)
-                                                }
-                                              })))]
-               (fun (v f) { value (_while v f) })))
+        (continue (fun (v) { pair v true } ))
+        (break (fun (v) { pair v false } ))
+        (continue? (fun (cond cons alt) { if (snd cond) (cons (value cond)) (alt (value cond)) }))
+
+        (while (mkrecur (fun (w)
+                             { fun (v f)
+                                   { with* [(result (f v))]
+                                     (continue? result (fun (v') { w w v' f }) id)
+                                     }
+                                   })))
 
         (for (mkrecur (fun (_for)
                            { fun (start until v f)
@@ -57,8 +57,8 @@
                                       })))
 
         (head (for 1 10 (list 0) (fun (v i) { cons i v })))
-        (result (map head (fun (in) { * in 2 })))
-	(result2 (while 1 (fun (v) { if (< (factorial v) 100) (continue (+ v 1)) (break v) })))
+        (_ (map head (fun (in) { * in 2 })))
+        (result (while 1 (fun (v) { if (< (factorial v) 100) (continue (+ v 1)) (break v) })))
         ]
-       result2
+       result
 )

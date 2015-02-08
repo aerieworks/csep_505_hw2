@@ -144,10 +144,9 @@ interpStr input =
   let env      = initialEnv
       bound    = map (\x -> fst x) env
       reserved = ("if":"fun":bound)
-      result   = desugarStr input -- >>= (\expr -> checkIds bound reserved expr >>= \_ -> expr)
-  in case result of
-    Err msg -> fail msg
-    Ok expr -> let STR tr = interp expr env in fst (tr (0, []))
+  in do expr <- desugarStr input
+        _    <- checkIds bound reserved expr
+        let STR tr = interp expr env in fst (tr (0, []))
 
 interpFile :: String -> IO ()
 interpFile filename =
